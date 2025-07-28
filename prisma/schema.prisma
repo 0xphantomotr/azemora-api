@@ -1,15 +1,43 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// Defines the possible statuses for a project, mirroring the smart contract enum.
+enum ProjectStatus {
+  Pending
+  Active
+  Paused
+  Archived
+}
+
+// Represents a project registered in the ProjectRegistry smart contract.
+model Project {
+  // The unique on-chain identifier (keccak256 hash), stored as a string.
+  // We use @id to mark it as the primary key.
+  id            String        @id
+
+  // Off-chain metadata fetched from the project's metaURI.
+  name          String
+  description   String?       // Optional, as not all metaURIs might have it.
+  imageUrl      String?
+
+  // The URI pointing to the off-chain JSON metadata file.
+  metaURI       String
+
+  // The wallet address of the project owner.
+  owner         String
+
+  // The current status of the project.
+  status        ProjectStatus
+
+  // Timestamps for when the record is created and updated in our database.
+  // @default(now()) automatically sets the creation time.
+  // @updatedAt automatically updates the timestamp on any change.
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 }

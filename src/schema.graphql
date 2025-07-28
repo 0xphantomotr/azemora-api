@@ -1,0 +1,20 @@
+# Defines the shape of a Project object that our API can return.
+# It mirrors our Prisma schema but is defined in GraphQL's syntax.
+type Project {
+  id: String!
+  name: String!
+  description: String
+  imageUrl: String
+  metaURI: String!
+  owner: String!
+  status: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+# Defines the available queries.
+type Query {
+  # This query will return a list of all projects.
+  # The "!" means the items in the list and the list itself cannot be null.
+  projects: [Project!]!
+} 

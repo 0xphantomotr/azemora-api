@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "backfill": "ts-node src/indexer.ts",
+    "dev": "nodemon src/index.ts"
   },
   "repository": {
     "type": "git",
@@ -20,6 +22,8 @@
   "homepage": "https://github.com/0xphantomotr/azemora-api#readme",
   "dependencies": {
     "@apollo/server": "^5.0.0",
+    "@prisma/client": "^6.12.0",
+    "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "graphql": "^16.11.0",
     "pg": "^8.16.3",
