@@ -2,37 +2,55 @@ import { ApolloServer } from '@apollo/server';
 import { startStandaloneServer } from '@apollo/server/standalone';
 import { readFileSync } from 'fs';
 import { prisma } from './db';
+import { ProjectStatus } from '@prisma/client';
 
-// Read the GraphQL schema from the file system.
-// The `readFileSync` is a simple way to load our schema.
 const typeDefs = readFileSync('./src/schema.graphql', { encoding: 'utf-8' });
 
-// Resolvers define how to fetch the data for a given type in the schema.
-// This resolver tells Apollo how to handle the "projects" query.
+interface ProjectsArgs {
+  status?: ProjectStatus;
+  skip?: number;
+  take?: number;
+}
+
+// --- NEW INTERFACE ---
+// Define the structure for the single project query arguments
+interface ProjectArgs {
+  id: string;
+}
+
 const resolvers = {
   Query: {
-    // This function will be called when a "projects" query is received.
-    projects: async () => {
-      // It uses our Prisma client to find all projects in the database.
-      // We also order them by creation date to show the newest first.
+    projects: async (_: any, { status, skip, take }: ProjectsArgs) => {
+      const where = status ? { status: status } : {};
+
       return prisma.project.findMany({
+        where: where,
+        skip: skip,
+        take: take,
         orderBy: {
           createdAt: 'desc',
+        },
+      });
+    },
+
+    // --- NEW RESOLVER ---
+    project: async (_: any, { id }: ProjectArgs) => {
+      // Use Prisma's findUnique method, which is highly optimized for
+      // fetching a single record by its primary key or a unique index.
+      return prisma.project.findUnique({
+        where: {
+          id: id,
         },
       });
     },
   },
 };
 
-// The ApolloServer constructor requires two parameters: your schema
-// definition and your set of resolvers.
 const server = new ApolloServer({
   typeDefs,
   resolvers,
 });
 
-// The `startStandaloneServer` function is a helper from Apollo to quickly
-// start a server. It returns a promise that resolves with the server's URL.
 async function startServer() {
   const { url } = await startStandaloneServer(server, {
     listen: { port: 4000 },

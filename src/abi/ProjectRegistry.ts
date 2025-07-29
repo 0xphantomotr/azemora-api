@@ -10,6 +10,16 @@ export const projectRegistryABI = [
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "ProjectStatusChanged",
+    "inputs": [
+      { "name": "projectId", "type": "bytes32", "indexed": true, "internalType": "bytes32" },
+      { "name": "oldStatus", "type": "uint8", "indexed": false, "internalType": "enum IProjectRegistry.ProjectStatus" },
+      { "name": "newStatus", "type": "uint8", "indexed": false, "internalType": "enum IProjectRegistry.ProjectStatus" }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "function",
     "name": "getProject",
     "inputs": [

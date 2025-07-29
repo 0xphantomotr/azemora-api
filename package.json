@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "backfill": "ts-node src/indexer.ts",
-    "dev": "nodemon src/index.ts"
+    "dev": "nodemon src/index.ts",
+    "listen": "ts-node src/listener.ts"
   },
   "repository": {
     "type": "git",

@@ -14,7 +14,17 @@ type Project {
 
 # Defines the available queries.
 type Query {
-  # This query will return a list of all projects.
-  # The "!" means the items in the list and the list itself cannot be null.
-  projects: [Project!]!
+  # This query will return a list of projects.
+  # It now accepts optional arguments for filtering and pagination.
+  projects(
+    status: String
+    skip: Int
+    take: Int
+  ): [Project!]!
+
+  # --- NEW QUERY ---
+  # Fetches a single project by its unique ID.
+  # The "!" on the ID means this argument is required.
+  # The type is "Project" (nullable), as a requested ID might not exist.
+  project(id: String!): Project
 } 

@@ -2,6 +2,7 @@ import { createPublicClient, http } from 'viem';
 import { arbitrumSepolia } from 'viem/chains';
 import { prisma } from './db';
 import { projectRegistryABI } from './abi/ProjectRegistry';
+import { ProjectStatus } from '@prisma/client';
 
 // Ensure environment variables are loaded
 import * as dotenv from 'dotenv';
@@ -19,13 +20,20 @@ console.log("----------------------------------------------------");
 // --- END DIAGNOSTIC LOGS ---
 
 if (!PROJECT_REGISTRY_ADDRESS || !ALCHEMY_API_KEY) {
-  throw new Error("Missing required environment variables: PROJECT_REGISTRY_ADDRESS or ALCHEMY_API_KEY");
+  throw new Error("Missing required environment variables");
 }
 
 const publicClient = createPublicClient({
   chain: arbitrumSepolia,
   transport: http(`https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`),
 });
+
+const statusMap: { [key: number]: ProjectStatus } = {
+  0: 'Pending',
+  1: 'Active',
+  2: 'Paused',
+  3: 'Archived',
+};
 
 async function fetchAndProcessMetadata(uri: string): Promise<{ name: string; description?: string; imageUrl?: string }> {
   try {
@@ -44,80 +52,91 @@ async function main() {
   const latestBlock = await publicClient.getBlockNumber();
   
   const CHUNK_SIZE = 499n;
-  const allLogs = [];
 
-  console.log(`Fetching logs from block ${fromBlock} to ${latestBlock} in chunks of ${CHUNK_SIZE}...`);
-
+  // --- PASS 1: Index Project Registrations ---
+  console.log("\n--- PASS 1: Fetching ProjectRegistered events ---");
+  const registrationLogs = [];
   for (let currentBlock = fromBlock; currentBlock <= latestBlock; currentBlock += CHUNK_SIZE) {
     const toBlock = currentBlock + CHUNK_SIZE < latestBlock ? currentBlock + CHUNK_SIZE : latestBlock;
-    
-    // --- FIX: Log every chunk for better feedback ---
     process.stdout.write(`  Fetching chunk: ${currentBlock} to ${toBlock}... `);
-
-    try {
-      const logs = await publicClient.getLogs({
-        address: PROJECT_REGISTRY_ADDRESS,
-        event: projectRegistryABI[0],
-        fromBlock: currentBlock,
-        toBlock: toBlock,
-      });
-
-      if (logs.length > 0) {
-        process.stdout.write(`FOUND ${logs.length}!\n`); // Move to new line when found
-        allLogs.push(...logs);
-      } else {
-        process.stdout.write("OK\r"); // Overwrite the line if no logs are found
-      }
-      
-    } catch (error) {
-      process.stdout.write("ERROR\n"); // Move to new line on error
-      console.error(`  Error fetching logs for block range ${currentBlock}-${toBlock}:`, error);
+    const logs = await publicClient.getLogs({
+      address: PROJECT_REGISTRY_ADDRESS,
+      event: projectRegistryABI[0], // ProjectRegistered event
+      fromBlock: currentBlock,
+      toBlock: toBlock,
+    });
+    if (logs.length > 0) {
+      process.stdout.write(`FOUND ${logs.length}!\n`);
+      registrationLogs.push(...logs);
+    } else {
+      process.stdout.write("OK\r");
     }
   }
 
-  // Add a new line after the loop for clean logging
-  console.log("\nFinished fetching. Found", allLogs.length, "total ProjectRegistered events.");
-
-  if (allLogs.length === 0) {
-    console.log("No projects found to index. Exiting.");
-    return;
-  }
-
-  for (const log of allLogs) {
+  console.log(`\nFound ${registrationLogs.length} total ProjectRegistered events.`);
+  for (const log of registrationLogs) {
     const { projectId, owner, metaURI } = log.args;
-
-    if (!projectId || !owner || !metaURI) {
-      console.warn('Skipping log with missing arguments:', log);
-      continue;
-    }
-
-    console.log(`Processing project ID: ${projectId}`);
-
-    const metadata = await fetchAndProcessMetadata(metaURI);
-
+    if (!projectId || !owner || !metaURI) continue;
     try {
-      await prisma.project.create({
-        data: {
+      await prisma.project.upsert({
+        where: { id: projectId },
+        update: {}, // Do nothing if it exists
+        create: {
           id: projectId,
-          name: metadata.name,
-          description: metadata.description,
-          imageUrl: metadata.imageUrl,
+          name: (await fetchAndProcessMetadata(metaURI)).name,
           metaURI: metaURI,
           owner: owner,
-          status: 'Pending',
+          status: 'Pending', // Always start as pending
         },
       });
-      console.log(`Successfully indexed project: ${projectId}`);
+      console.log(`  Upserted project: ${projectId}`);
     } catch (e) {
-      if (e instanceof Error && e.message.includes('Unique constraint failed')) {
-        console.log(`Project ${projectId} already exists. Skipping.`);
-      } else {
-        console.error(`Failed to index project ${projectId}:`, e);
-      }
+      console.error(`  Failed to upsert project ${projectId}:`, e);
     }
   }
 
-  console.log('--- Project Backfill Complete ---');
+  // --- PASS 2: Index Project Status Changes ---
+  console.log("\n--- PASS 2: Fetching ProjectStatusChanged events ---");
+  const statusChangeLogs = [];
+  for (let currentBlock = fromBlock; currentBlock <= latestBlock; currentBlock += CHUNK_SIZE) {
+    const toBlock = currentBlock + CHUNK_SIZE < latestBlock ? currentBlock + CHUNK_SIZE : latestBlock;
+    process.stdout.write(`  Fetching chunk: ${currentBlock} to ${toBlock}... `);
+    const logs = await publicClient.getLogs({
+      address: PROJECT_REGISTRY_ADDRESS,
+      event: projectRegistryABI[1], // ProjectStatusChanged event
+      fromBlock: currentBlock,
+      toBlock: toBlock,
+    });
+    if (logs.length > 0) {
+      process.stdout.write(`FOUND ${logs.length}!\n`);
+      statusChangeLogs.push(...logs);
+    } else {
+      process.stdout.write("OK\r");
+    }
+  }
+
+  console.log(`\nFound ${statusChangeLogs.length} total ProjectStatusChanged events.`);
+  for (const log of statusChangeLogs) {
+    const { projectId, newStatus } = log.args;
+    if (!projectId || newStatus === undefined) continue;
+
+    const mappedStatus = statusMap[newStatus];
+    if (!mappedStatus) continue; // Skip if status is unknown
+
+    try {
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { status: mappedStatus },
+      });
+      console.log(`  Updated status for project ${projectId} to ${mappedStatus}`);
+    } catch (e) {
+      // This error can happen if a status change is for a project we didn't index.
+      // In a robust system, we might handle this, but for now, we log it.
+      console.error(`  Could not update status for project ${projectId}:`, e);
+    }
+  }
+
+  console.log('\n--- Project Backfill Complete ---');
 }
 
 main().catch((e) => {
