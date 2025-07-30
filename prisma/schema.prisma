@@ -7,7 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Defines the possible statuses for a project, mirroring the smart contract enum.
 enum ProjectStatus {
   Pending
   Active
@@ -15,29 +14,60 @@ enum ProjectStatus {
   Archived
 }
 
-// Represents a project registered in the ProjectRegistry smart contract.
 model Project {
-  // The unique on-chain identifier (keccak256 hash), stored as a string.
-  // We use @id to mark it as the primary key.
-  id            String        @id
+  id          String         @id
+  name        String
+  description String?
+  imageUrl    String?
+  metaURI     String
+  owner       String
+  status      ProjectStatus  @default(Pending)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  bondingCurve BondingCurve?
 
-  // Off-chain metadata fetched from the project's metaURI.
-  name          String
-  description   String?       // Optional, as not all metaURIs might have it.
-  imageUrl      String?
+  // --- NEW RELATIONS ---
+  verifications Verification[]
+  impactCredits ImpactCredit[]
+}
 
-  // The URI pointing to the off-chain JSON metadata file.
-  metaURI       String
+model BondingCurve {
+  id                 String   @id // The bonding curve contract address
+  projectId          String   @unique // Foreign key to Project
+  project            Project  @relation(fields: [projectId], references: [id])
+  creator            String
+  collateralToken    String
+  initialPrice       String
+  priceMultiplier    String
+  projectToken       String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
 
-  // The wallet address of the project owner.
-  owner         String
+// --- NEW MODELS ---
 
-  // The current status of the project.
-  status        ProjectStatus
+// Represents a verification request submitted to the dMRVManager.
+model Verification {
+  id           String   @id // The verificationId from the event
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id])
+  verifier     String   // The address of the verifier module used
+  submittedAt  DateTime @default(now())
+  status       String   // e.g., Submitted, Succeeded, Failed
+  outcomeData  Bytes?   // The data returned from the VerificationOutcome event
 
-  // Timestamps for when the record is created and updated in our database.
-  // @default(now()) automatically sets the creation time.
-  // @updatedAt automatically updates the timestamp on any change.
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  // Relation to the credits minted from this verification
+  impactCredits ImpactCredit[]
+}
+
+// Represents a batch of Dynamic Impact Credits minted for a project.
+model ImpactCredit {
+  id             String       @id @default(cuid()) // Unique ID for the record
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id])
+  verificationId String
+  verification   Verification @relation(fields: [verificationId], references: [id])
+  amount         String       // The amount of credits minted (as a string to handle large numbers)
+  mintedAt       DateTime     @default(now())
+  txHash         String       // The transaction hash of the mint
 }
